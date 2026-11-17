@@ -16,6 +16,28 @@ All notable changes to this project are documented here. The format follows
   Tests are updated with hand-computed accounting identities (winning, losing,
   flat, stop-loss, take-profit, multi-trade compounding) and no longer pin the
   old behaviour.
+- Execution simulation matches orders in fill-time order (stable within a bar)
+  instead of submission order, so replay, equity curve and returns are correct
+  for unsorted order lists and a bar-i sell can no longer use a bar-j>i fill;
+  `valueFraction` buys are sized by cash including fees, so a 100% buy fills
+  instead of always being rejected.
+- CVaR averages the worst `floor((1-confidence)·N)` observations instead of
+  threshold-filtering (which could swallow the whole sample when the quantile sat
+  in positive returns); downside deviation is the semi-deviation around zero.
+  IC decay `h=1` equals the full-sample IC instead of lagging an extra period,
+  and `quant_research_pipeline` passes the aligned 1-period forward return so its
+  factor IC is no longer 2-period.
+- Layered backtests hold the full `horizon` and mark the equity curve period by
+  period (previously one period short and back-filled with end-of-segment values);
+  layer statistics use next-period returns, not the signal-period return.
+- Bollinger bands use a two-pass variance: a 1e8 price with ±0.01 jitter no
+  longer collapses the band width to zero through catastrophic cancellation.
+- Market parsers reject missing (null / empty / blank) numeric fields instead of
+  silently coercing them to 0; OKX hourly intervals map to `1H/2H/...`,
+  unsupported intervals fail fast, and Bybit `limit` is capped at 1000, not 200.
+- Deflated Sharpe now de-annualizes the observed Sharpe, uses the
+  Bailey–López de Prado standard error with excess-kurtosis semantics, and reports
+  the standardized z statistic with a one-sided p-value.
 
 ## [0.92.0] - 2026-11-11
 

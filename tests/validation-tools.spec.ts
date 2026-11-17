@@ -35,12 +35,13 @@ test('factorCorrelation: 前置条件', () => {
   assert.throws(() => factorCorrelation([[1, 2], [3, 4]], ['a'], 0.7), /factorNames length/)
 })
 
-test('deflatedSharpe: 单次试验 → 最小显著夏普较低，高夏普显著', () => {
-  const r = deflatedSharpe(1.5, 252, 1)
-  assert.ok(r.observedSharpe === 1.5)
-  // 单次试验无多重比较校正 → minSignificant 很小 → 显著
-  assert.ok(r.minSignificantSharpe < 0.1, `minSig=${r.minSignificantSharpe}`)
-  assert.ok(r.significant, `minSig=${r.minSignificantSharpe}`)
+test('deflatedSharpe: 单次试验 → 无多重比较校正，高夏普显著', () => {
+  // 年化 3.0、1000 天 → 每期 SR=0.189，SE≈0.0319，z≈5.9，单侧 p≈0
+  const r = deflatedSharpe(3.0, 1000, 1)
+  assert.equal(r.observedSharpe, 3.0)
+  assert.equal(r.minSignificantSharpe, 0)
+  assert.ok(Math.abs(r.deflatedSharpe - 5.9) < 0.5, `z=${r.deflatedSharpe}`)
+  assert.ok(r.significant)
   assert.ok(r.pValue < 0.05)
 })
 

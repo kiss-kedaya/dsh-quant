@@ -53,11 +53,12 @@ function normInv(p: number): number {
 /**
  * Deflated Sharpe 计算。
  *
- * @param observedSharpe 观察到的年化夏普
- * @param numPeriods 回测期数（年化周期数，如日频 = 天数）
+ * @param observedSharpe 观察到的年化夏普（内部按 periodsPerYear 换算成每期）
+ * @param numPeriods 回测收益期数（如日频 = 天数）
  * @param numTrials 试验次数（参数搜索/因子数量，至少 1）
  * @param skewness 收益偏度（默认 0）
- * @param kurtosis 超额峰度（默认 0）
+ * @param kurtosis 超额峰度（默认 0；正态 = 0）
+ * @param periodsPerYear 每年期数（默认 252），用于年化/每期换算
  */
 export function deflatedSharpe(
   observedSharpe: number,
@@ -65,38 +66,36 @@ export function deflatedSharpe(
   numTrials = 1,
   skewness = 0,
   kurtosis = 0,
+  periodsPerYear = 252,
 ): DeflatedSharpeResult {
   if (!Number.isFinite(observedSharpe)) throw new RangeError('observedSharpe must be finite')
   if (numPeriods < 30) throw new RangeError(`numPeriods must be >= 30, got ${numPeriods}`)
   if (numTrials < 1 || !Number.isInteger(numTrials)) throw new RangeError(`numTrials must be a positive integer, got ${numTrials}`)
-
-  // 期望最大夏普（试验次数校正）：E[max] ≈ (1-γ)Φ⁻¹(1-1/N) + γΦ⁻¹(1-1/(Ne))
-  // 单次试验（N=1）：无多重比较，E[max] = 0（取期望夏普本身）
-  const gamma = 0.5772156649 // Euler-Mascheroni
-  let eMaxSharpe: number
-  if (numTrials === 1) {
-    eMaxSharpe = 0
-  } else {
-    const z1 = normInv(1 - 1 / numTrials)
-    const z2 = normInv(1 - 1 / (numTrials * Math.E))
-    eMaxSharpe = (1 - gamma) * z1 + gamma * z2
+  if (!Number.isFinite(periodsPerYear) || periodsPerYear <= 0) {
+    throw new RangeError(`periodsPerYear must be > 0, got ${periodsPerYear}`)
   }
 
-  // 标准误校正（含偏度峰度）：SR std ≈ sqrt((1 + 0.5 SR² - skew SR + (kurt-1)/4 SR²) / (T-1))
-  const srm = observedSharpe
-  const se = Math.sqrt((1 + 0.5 * srm * srm - skewness * srm + ((kurtosis - 1) / 4) * srm * srm) / (numPeriods - 1))
-  const minSignificantSharpe = eMaxSharpe * se
+  // 期望最大 z（试验次数校正）：E[max] ≈ (1-γ)Φ⁻¹(1-1/N) + γΦ⁻¹(1-1/(Ne))
+  const gamma = 0.5772156649 // Euler-Mascheroni
+  const eMaxZ = numTrials === 1
+    ? 0
+    : (1 - gamma) * normInv(1 - 1 / numTrials) + gamma * normInv(1 - 1 / (numTrials * Math.E))
 
-  // Deflated Sharpe
-  const deflated = numPeriods > 1
-    ? (observedSharpe - minSignificantSharpe) * Math.sqrt(numPeriods - 1)
-    : observedSharpe - minSignificantSharpe
+  // observedSharpe 是年化值，先换算成每期夏普，再与期数 T 配对算标准误
+  const sr = observedSharpe / Math.sqrt(periodsPerYear)
+  // Bailey & López de Prado (2014) SR 标准误：sqrt((1 - skew·SR + (γ4-1)/4·SR²)/(T-1))。
+  // γ4 为原始峰度 = 超额峰度 + 3，故 (γ4-1)/4 = (kurtosis+2)/4（正态超额峰度 0 → 0.5）。
+  const srVar = 1 - skewness * sr + ((kurtosis + 2) / 4) * sr * sr
+  const se = Math.sqrt(Math.max(srVar, 0) / (numPeriods - 1))
+  const minSignificantSharpe = eMaxZ * se * Math.sqrt(periodsPerYear)
+  // Deflated Sharpe 检验统计量：z = SR/SE - E[max]（年化门槛与 z 同源，量纲一致）
+  const deflated = se > 0 ? sr / se - eMaxZ : 0
   const pValue = 1 - normCdf(deflated)
-  const significant = observedSharpe > minSignificantSharpe
+  const significant = deflated > 1.6448536269514722 // one-sided 5%
   const notes: string[] = []
-  notes.push(`试验次数 ${numTrials} → 期望最大夏普 ${eMaxSharpe.toFixed(2)} 个标准误`)
-  notes.push(`最小显著夏普 ${minSignificantSharpe.toFixed(3)}（observed ${observedSharpe.toFixed(3)}）`)
-  if (significant) notes.push('通过 Deflated Sharpe 检验 —— 结果不太可能是过拟合')
-  else notes.push('未通过 —— 结果可能在试验次数内被高估（过拟合风险）')
+  notes.push(`试验次数 ${numTrials} → 期望最大 z ${eMaxZ.toFixed(2)}（年化门槛 ${minSignificantSharpe.toFixed(3)}）`)
+  notes.push(`年化夏普 ${observedSharpe.toFixed(3)} → 每期 ${sr.toFixed(4)}，z=${deflated.toFixed(2)}，p=${pValue.toFixed(4)}`)
+  if (significant) notes.push('通过 Deflated Sharpe 检验（单侧 5%）—— 结果不太可能是过拟合')
+  else notes.push('未通过（单侧 5%）—— 结果可能在试验次数内被高估（过拟合风险）')
   return { observedSharpe, minSignificantSharpe, deflatedSharpe: deflated, significant, pValue, notes }
 }

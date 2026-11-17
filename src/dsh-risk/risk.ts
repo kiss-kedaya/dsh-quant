@@ -39,16 +39,16 @@ export function riskMetrics(
   if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
     throw new RangeError(`confidence must be in (0, 1), got ${confidence}`)
   }
-  // VaR / CVaR（历史法）
+  // VaR / CVaR（历史法）：VaR 取分位点损失；CVaR 取最差 tailCount 个样本的均值。
+  // 不能按阈值 filter——阈值落在正收益区时会把正收益也纳入尾部，ES 会被稀释成错误值。
   const sorted = [...returns].sort((a, b) => a - b)
-  const tailIdx = Math.max(0, Math.floor((1 - confidence) * n) - 1)
-  const varCut = -sorted[tailIdx]!
-  const tail = sorted.filter(r => r <= -varCut)
-  const cvar95 = tail.length === 0 ? varCut : -(tail.reduce((a, b) => a + b, 0) / tail.length)
-  // 下行偏差
+  const tailCount = Math.min(n, Math.max(1, Math.floor((1 - confidence) * n)))
+  const varCut = -sorted[tailCount - 1]!
+  const tail = sorted.slice(0, tailCount)
+  const cvar95 = -(tail.reduce((a, b) => a + b, 0) / tail.length)
+  // 下行偏差：围绕目标 0 的半方差 sqrt(Σ min(r,0)² / N)，不减负收益均值
   const downs = returns.filter(r => r < 0)
-  const downMean = downs.length === 0 ? 0 : downs.reduce((a, b) => a + b, 0) / n
-  const downVar = downs.length === 0 ? 0 : downs.reduce((a, x) => a + (x - downMean) ** 2, 0) / n
+  const downVar = downs.length === 0 ? 0 : downs.reduce((a, x) => a + x * x, 0) / n
   const downsideDeviation = Math.sqrt(downVar)
   // 最大回撤（从累计净值）
   let nav = 1

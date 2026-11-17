@@ -114,13 +114,15 @@ export async function researchPipeline(
     performanceFeeRate: 0.2,
   })
 
-  // 动量因子：close[t]/close[t-12]-1 预测 close[t+1]/close[t]-1
+  // 动量因子：factorEvaluate 内部按 factor[i] 配 forwardReturns[i+1] 对齐，
+  // 所以第 t 条同时放动量(t)与第 t 期收益 ret(t)，内部取 ret(t+1) 才是 1 期前瞻。
+  // 不能在这里手工推 ret(t+1)——那会让 factorEvaluate 再滞后一次，变成 2 期前瞻。
   const factorWindow = options.factorWindow ?? 20
   const f: number[] = []
   const r: number[] = []
-  for (let t = 12; t < close.length - 1; t++) {
+  for (let t = 12; t < close.length; t++) {
     f.push(close[t]! / close[t - 12]! - 1)
-    r.push(close[t + 1]! / close[t]! - 1)
+    r.push(close[t]! / close[t - 1]! - 1)
   }
   const fe = f.length >= 2 ? factorEvaluate(f, r, 5, Math.min(factorWindow, f.length)) : null
 
