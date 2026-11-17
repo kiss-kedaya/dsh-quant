@@ -221,13 +221,18 @@ export function firstNonFinite(values: readonly number[]): number | null {
   return null
 }
 
-/** 最高/最低滚动窗口辅助：返回 [highest, lowest] 窗口（含当前）。 */
-function rollingHiLo(values: readonly number[], window: number, i: number): [number, number] {
+/** 滚动窗口：high 取最大值、low 取最小值（含当前）。避免 slice+spread 的每点数组分配。 */
+function rollingHiLoRange(
+  high: readonly number[],
+  low: readonly number[],
+  window: number,
+  i: number,
+): [number, number] {
   let hi = -Infinity
   let lo = Infinity
   for (let j = i - window + 1; j <= i; j++) {
-    if (values[j]! > hi) hi = values[j]!
-    if (values[j]! < lo) lo = values[j]!
+    if (high[j]! > hi) hi = high[j]!
+    if (low[j]! < lo) lo = low[j]!
   }
   return [hi, lo]
 }
@@ -260,8 +265,7 @@ export function kdj(
   let kPrev = 50
   let dPrev = 50
   for (let i = window - 1; i < n; i++) {
-    const [hi, lo] = rollingHiLo(high, window, i)
-    const loWin = Math.min(...low.slice(i - window + 1, i + 1))
+    const [hi, loWin] = rollingHiLoRange(high, low, window, i)
     const range = hi - loWin
     const rsv = range === 0 ? 50 : ((close[i]! - loWin) / range) * 100
     kPrev = (2 * kPrev + rsv) / 3
@@ -288,8 +292,7 @@ export function williamsR(
   const out: (number | null)[] = new Array(n).fill(null)
   if (n < window) return out
   for (let i = window - 1; i < n; i++) {
-    const [hi, lo] = rollingHiLo(high, window, i)
-    const loWin = Math.min(...low.slice(i - window + 1, i + 1))
+    const [hi, loWin] = rollingHiLoRange(high, low, window, i)
     const range = hi - loWin
     out[i] = range === 0 ? 0 : ((hi - close[i]!) / range) * -100
   }

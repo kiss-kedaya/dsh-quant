@@ -208,12 +208,22 @@ export function combineFactors(
   for (let k = 0; k < factors.length; k++) {
     for (let i = 0; i < n; i++) combined[i] += z[k]![i]! * w[k]!
   }
-  // rank 归一化（升序 0..1）
-  const sorted = [...combined].sort((a, b) => a - b)
-  const signal = combined.map(v => {
-    const idx = sorted.indexOf(v)
-    return n === 1 ? 0 : idx / (n - 1)
-  })
+  // rank 归一化（升序 0..1）：先排序再按平均秩回填。
+  // 不能用 sorted.indexOf(v)——那是 O(n²)，且并列值会全部映射到第一个秩。
+  const signal = new Array<number>(n).fill(0)
+  if (n === 1) {
+    signal[0] = 0
+  } else {
+    const order = combined.map((_, i) => i).sort((a, b) => combined[a]! - combined[b]!)
+    let i = 0
+    while (i < n) {
+      let j = i
+      while (j + 1 < n && combined[order[j + 1]!] === combined[order[i]!]) j++
+      const avgRank = (i + j) / 2
+      for (let k = i; k <= j; k++) signal[order[k]!] = avgRank / (n - 1)
+      i = j + 1
+    }
+  }
   return { signal, effectiveWeights: [...w], factorCount: factors.length }
 }
 
