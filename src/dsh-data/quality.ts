@@ -159,8 +159,17 @@ export function dataQualityReport(
   values: readonly (number | null)[],
   channelNames: readonly string[] = [],
 ): DataQualityReport {
-  const finite = values.filter(x => x !== null && x !== undefined && Number.isFinite(x as number)) as number[]
-  const pit = pitCheck(finite)
+  const finite: number[] = []
+  const sourceIndices: number[] = []
+  values.forEach((x, i) => {
+    if (x !== null && x !== undefined && Number.isFinite(x as number)) {
+      finite.push(x as number)
+      sourceIndices.push(i)
+    }
+  })
+  const pitRaw = pitCheck(finite)
+  // pitCheck 在过滤 null 后的序列上返回下标；映射回原始下标，与 survivorship.gaps 同一坐标系
+  const pit = { ...pitRaw, lookAheadIndices: pitRaw.lookAheadIndices.map(i => sourceIndices[i]!) }
   const survivorship = survivorshipCheck(values)
   const channels = channelReliability(channelNames)
   // 综合健康度：PIT 通过 50% + 连续 30% + 渠道平均可靠性 20%

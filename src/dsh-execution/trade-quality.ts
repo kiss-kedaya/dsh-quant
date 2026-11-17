@@ -51,6 +51,9 @@ export function tradeQuality(
   unfilledOrders = 0,
   holdingPeriodBars?: readonly number[],
 ): TradeQualityResult {
+  if (!Number.isInteger(unfilledOrders) || unfilledOrders < 0) {
+    throw new RangeError(`unfilledOrders must be a non-negative integer, got ${unfilledOrders}`)
+  }
   const fillsCount = fills.length
   const orders = fillsCount + unfilledOrders
   const fillRate = orders === 0 ? 0 : fillsCount / orders
@@ -62,14 +65,17 @@ export function tradeQuality(
   let avgHoldingBars = 0
   if (holdingPeriodBars && holdingPeriodBars.length > 0) {
     avgHoldingBars = holdingPeriodBars.reduce((a, b) => a + b, 0) / holdingPeriodBars.length
-  } else if (fills.length >= 2) {
-    // 启发式：相邻同资产 买→卖 对
+  } else {
+    // 按成交顺序配对 buy→sell（同一持仓的周期）。不能用 orderIndex 相等做条件：
+    // 一笔订单只产出一笔成交，该条件永远不成立，持仓周期会恒为 0。
     const periods: number[] = []
-    for (let i = 0; i + 1 < fills.length; i++) {
-      const a = fills[i]!
-      const b = fills[i + 1]!
-      if (a.side === 'buy' && b.side === 'sell' && a.orderIndex === b.orderIndex) {
-        periods.push(b.fillIndex - a.fillIndex)
+    let pendingBuyIndex: number | null = null
+    for (const f of fills) {
+      if (f.side === 'buy') {
+        pendingBuyIndex = f.fillIndex
+      } else if (pendingBuyIndex !== null) {
+        periods.push(f.fillIndex - pendingBuyIndex)
+        pendingBuyIndex = null
       }
     }
     if (periods.length > 0) avgHoldingBars = periods.reduce((x, y) => x + y, 0) / periods.length
@@ -78,7 +84,8 @@ export function tradeQuality(
   const sells = fills.filter(f => f.side === 'sell').length
   const avgFillValue = fills.length === 0 ? 0 : totalValue / fills.length
   const notes: string[] = []
-  if (fillRate < 0.8) notes.push(`成交率 ${(fillRate * 100).toFixed(0)}% 偏低 —— 检查流动性/滑点假设`)
+  if (orders === 0) notes.push('无订单')
+  else if (fillRate < 0.8) notes.push(`成交率 ${(fillRate * 100).toFixed(0)}% 偏低 —— 检查流动性/滑点假设`)
   else if (fillRate >= 0.99) notes.push(`成交率 ${(fillRate * 100).toFixed(0)}% 很高（可能过于理想）`)
   if (avgSlippageBps > 50) notes.push(`平均滑点 ${avgSlippageBps.toFixed(0)} bps 偏高`)
   if (unfilledOrders > 0) notes.push(`${unfilledOrders} 笔未成交`)

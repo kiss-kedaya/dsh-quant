@@ -288,6 +288,7 @@ export interface ChannelComparison {
 /** 按数据类型对比全部渠道：返回覆盖情况 + 费用门槛。 */
 export function compareChannels(dataType: string): { dataType: string; channels: ChannelComparison[] } {
   const dt = dataType.trim()
+  if (dt === '') throw new RangeError('dataType must not be empty')
   const channels = DATA_CHANNELS.map(c => ({
     name: c.name,
     displayName: c.displayName,
@@ -317,7 +318,9 @@ export interface AdviceEntry {
 
 /** 场景决策：按数据类型 + 预算 + 用途给出渠道推荐排序与理由。 */
 export function adviseChannels(requirements: AdviceRequirements): AdviceEntry[] {
-  const { dataType, budget = 'free', purpose = 'research' } = requirements
+  const dataType = requirements.dataType.trim()
+  if (dataType === '') throw new RangeError('dataType must not be empty')
+  const { budget = 'free', purpose = 'research' } = requirements
   const covered = DATA_CHANNELS.filter(c => c.dataTypes.some(t => t === dataType || t.includes(dataType) || dataType.includes(t)))
   const entries: AdviceEntry[] = []
 

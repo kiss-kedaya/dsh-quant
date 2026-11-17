@@ -40,15 +40,19 @@ export function seriesStats(values: readonly number[]): SeriesStats {
   if (n >= 2 && variance > 0) {
     let cov = 0
     for (let i = 1; i < n; i++) cov += (v[i]! - mean) * (v[i - 1]! - mean)
-    autocorr1 = cov / ((n - 1) * variance)
+    // 分子与分母都用 n 项口径（方差是总体方差），不能除以 (n-1)
+    autocorr1 = cov / (n * variance)
   }
   // 年化波动（基于逐期收益）
   let annVol = 0
   if (n >= 2) {
     const rets: number[] = []
-    for (let i = 1; i < n; i++) rets.push(v[i]! / v[i - 1]! - 1)
-    const rMean = rets.reduce((a, b) => a + b, 0) / rets.length
-    const rVar = rets.reduce((a, x) => a + (x - rMean) ** 2, 0) / rets.length
+    for (let i = 1; i < n; i++) {
+      if (v[i - 1]! === 0) continue // 0 分母产生 Infinity/NaN，会污染年化波动
+      rets.push(v[i]! / v[i - 1]! - 1)
+    }
+    const rMean = rets.length === 0 ? 0 : rets.reduce((a, b) => a + b, 0) / rets.length
+    const rVar = rets.length === 0 ? 0 : rets.reduce((a, x) => a + (x - rMean) ** 2, 0) / rets.length
     annVol = Math.sqrt(rVar) * Math.sqrt(365)
   }
   const totalReturnPct = v[0]! === 0 ? 0 : ((v[n - 1]! - v[0]!) / v[0]!) * 100
@@ -76,11 +80,13 @@ export interface CandleQuality {
   nonPositive: number
   /** 时间戳未严格递增的位置数 */
   timeNotIncreasing: number
-  /** 时间缺口数（相邻时间戳间隔不等的段数；需要 >= 3 根） */
+  /** 时间缺口数（间隔超过基准 4 倍的段数；基准取间隔中位数，避免周末/节假日误报） */
   timeGaps: number
   /** close 相对前一根变动超过 50% 的位置数（可能的数据错误） */
   extremeMoves: number
-  /** 各项是否全部健康 */
+  /** 非有限值（NaN/Infinity）数量 */
+  nonFinite: number
+  /** 各项是否全部健康（空序列不健康） */
   healthy: boolean
 }
 
@@ -95,31 +101,41 @@ export interface CandleInput {
 
 /** OHLCV K 线质量检查（供 agent 在分析前验证数据健康）。 */
 export function candlesCheck(candles: readonly CandleInput[]): CandleQuality {
+  const fields = ['openTime', 'open', 'high', 'low', 'close', 'volume'] as const
   let highBelowLow = 0
   let nonPositive = 0
   let timeNotIncreasing = 0
   let timeGaps = 0
   let extremeMoves = 0
+  let nonFinite = 0
   const n = candles.length
-  if (n > 1) {
-    const firstStep = candles[1]!.openTime - candles[0]!.openTime
+  if (n > 0) {
+    // 基准间隔取中位数：不能用第一根当基准，否则首段异常会让后续全部误报
+    const steps: number[] = []
+    for (let i = 1; i < n; i++) {
+      const step = candles[i]!.openTime - candles[i - 1]!.openTime
+      if (step > 0) steps.push(step)
+    }
+    steps.sort((a, b) => a - b)
+    const baseStep = steps.length === 0 ? 0 : steps[Math.floor(steps.length / 2)]!
     for (let i = 0; i < n; i++) {
       const c = candles[i]!
+      for (const key of fields) {
+        if (!Number.isFinite(c[key])) nonFinite++
+      }
+      if (!(c.open > 0) || !(c.high > 0) || !(c.low > 0) || !(c.close > 0)) nonPositive++
       if (c.high < c.low) highBelowLow++
-      if (c.open <= 0 || c.high <= 0 || c.low <= 0 || c.close <= 0) nonPositive++
       if (i >= 1) {
         const p = candles[i - 1]!
         if (c.openTime <= p.openTime) timeNotIncreasing++
-        if (i >= 2) {
-          const step = c.openTime - p.openTime
-          if (step !== firstStep && step > 0) timeGaps++
-        }
-        if (p.close !== 0 && Math.abs(c.close / p.close - 1) > 0.5) extremeMoves++
+        else if (baseStep > 0 && c.openTime - p.openTime > 4 * baseStep) timeGaps++
+        if (p.close !== 0 && Number.isFinite(c.close) && Number.isFinite(p.close) && Math.abs(c.close / p.close - 1) > 0.5) extremeMoves++
       }
     }
   }
-  const healthy = highBelowLow === 0 && nonPositive === 0 && timeNotIncreasing === 0 && timeGaps === 0 && extremeMoves === 0
-  return { count: n, highBelowLow, nonPositive, timeNotIncreasing, timeGaps, extremeMoves, healthy }
+  const healthy = n > 0 && highBelowLow === 0 && nonPositive === 0 && nonFinite === 0
+    && timeNotIncreasing === 0 && timeGaps === 0 && extremeMoves === 0
+  return { count: n, highBelowLow, nonPositive, timeNotIncreasing, timeGaps, extremeMoves, nonFinite, healthy }
 }
 
 export interface SeriesQuality {

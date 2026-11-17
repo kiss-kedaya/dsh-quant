@@ -32,10 +32,12 @@ test('ossPulse: 中型健康仓库（500 星、周更）→ B 73 分，无建议
 
 test('ossPulse: 大仓库缺上一期快照 → 增速中性 50', () => {
   const r = ossPulse({ stars: 1200, downloadsWeekly: 50000, openIssues: 5, daysSinceRelease: 3 })
-  // s=85（1200 落在 500-4999 档） d=70 m=50 h=100 f=100 → 17+10.5+12.5+20+20 = 80 → A
-  assert.equal(r.score, 80)
-  assert.equal(r.grade, 'A')
+  // openPullRequests 缺失 → 健康分中性 50（不再把缺失当 0 给满分）
+  // s=85 d=70 m=50 h=50 f=100 → 17+10.5+12.5+10+20 = 70 → B
+  assert.equal(r.score, 70)
+  assert.equal(r.grade, 'B')
   assert.equal(r.components.momentum, 50)
+  assert.equal(r.components.health, 50)
 })
 
 test('ossPulse: 失速 + 积压 + 停更 → D 28 分，四条建议', () => {
@@ -94,7 +96,8 @@ test('parseRepoStats: 标准 fixture 全字段', () => {
   assert.equal(r.stars, 3)
   assert.equal(r.forks, 0)
   assert.equal(r.watchers, 1)
-  assert.equal(r.openIssues, 9)
+  // open_issues_count 含 PR（9 = 7 issue + 2 PR），parse 后只算纯 issue
+  assert.equal(r.openIssues, 7)
   assert.equal(r.openPullRequests, 2)
   assert.equal(r.language, 'TypeScript')
   assert.deepEqual(r.topics, ['quant', 'dsh-plugin'])

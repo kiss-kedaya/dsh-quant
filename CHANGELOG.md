@@ -38,6 +38,21 @@ All notable changes to this project are documented here. The format follows
 - Deflated Sharpe now de-annualizes the observed Sharpe, uses the
   Bailey–López de Prado standard error with excess-kurtosis semantics, and reports
   the standardized z statistic with a one-sided p-value.
+- Boundary/contract fixes: `fundSimulate` rejects non-finite/non-positive equity
+  values instead of emitting NaN; `executeSimulate` rejects `slippageBps >= 10000`;
+  `tradeQuality` pairs buy→sell fills for holding period (was always 0) and
+  rejects negative `unfilledOrders`; `chartBacktest` returns the markers it
+  builds, `chartCandles`/`chartAnnotations` validate axis alignment and index
+  range, and the pipeline marks exits as well as entries; `candles: []` is a
+  parameter error instead of a network fallback; `candlesCheck` counts
+  non-finite values, treats an empty series as unhealthy, and flags gaps only
+  beyond 4× the median interval (weekends are no longer gaps); PIT
+  `lookAheadIndices` are mapped back to the original series indices;
+  `openIssues` excludes PRs; pulse treats one missing health input as neutral 50;
+  `seriesStats` uses the correct lag-1 denominator and skips zero denominators;
+  empty `dataType` and missing npm `dist-tags` fail with diagnostics;
+  `rebalanceSchedule` uses dimensionally consistent linear cost, restoring an
+  interior optimum instead of always picking frequency 1.
 
 ## [0.92.0] - 2026-11-11
 

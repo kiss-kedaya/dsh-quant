@@ -70,8 +70,10 @@ function momentumScore(stars: number, starsPrevious: number | undefined): number
 }
 
 function healthScore(stars: number, openIssues: number | undefined, openPullRequests: number | undefined): number {
-  if (openIssues === undefined && openPullRequests === undefined) return 50
-  const opens = Math.max(0, openIssues ?? 0) + Math.max(0, openPullRequests ?? 0)
+  // 任一可选项缺失按中性 50 处理（与 downloads/momentum/freshness 一致）：
+  // 把缺失当 0 会让"信息缺失"反而抬高健康分
+  if (openIssues === undefined || openPullRequests === undefined) return 50
+  const opens = Math.max(0, openIssues) + Math.max(0, openPullRequests)
   const ratio = opens / Math.max(1, stars)
   if (ratio <= 0.05) return 100
   if (ratio <= 0.2) return 70

@@ -43,9 +43,11 @@ export function parseNpmStats(
     return n
   }
   const str = (v: unknown): string | null => (v === null || v === undefined ? null : String(v))
+  const latest = registryJson['dist-tags']?.latest
+  if (latest === null || latest === undefined) throw new Error(`npm ${pkg}: missing dist-tags.latest`)
   return {
     pkg,
-    latest: String(registryJson['dist-tags'].latest),
+    latest: String(latest),
     weeklyDownloads: downloads(weekJson?.downloads, 'weekly downloads') ?? 0,
     monthlyDownloads: downloads(monthJson?.downloads, 'monthly downloads'),
     description: str(registryJson.description),

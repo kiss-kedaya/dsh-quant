@@ -50,9 +50,41 @@ test('candlesCheck: 各违规项计数', () => {
   assert.equal(q.highBelowLow, 1)
   assert.equal(q.nonPositive, 1)
   assert.equal(q.timeNotIncreasing, 1)
-  assert.equal(q.timeGaps, 1)
+  // 重复时间戳记 timeNotIncreasing，不再重复计为缺口；缺口只在间隔 > 4× 中位间隔时计数
+  assert.equal(q.timeGaps, 0)
   assert.equal(q.extremeMoves, 1)
   assert.equal(q.healthy, false)
+})
+
+test('candlesCheck: 真实缺口（间隔 > 4× 基准）计数', () => {
+  const q = candlesCheck([
+    { openTime: 1000, open: 10, high: 11, low: 9, close: 10, volume: 1 },
+    { openTime: 2000, open: 10, high: 11, low: 9, close: 10, volume: 1 },
+    { openTime: 3000, open: 10, high: 11, low: 9, close: 10, volume: 1 },
+    { openTime: 10000, open: 10, high: 11, low: 9, close: 10, volume: 1 }, // 7000 > 4×1000
+  ])
+  assert.equal(q.timeGaps, 1)
+  assert.equal(q.healthy, false)
+})
+
+test('candlesCheck: 周末式跳空（<= 4× 基准）不算缺口', () => {
+  const q = candlesCheck([
+    { openTime: 1000, open: 10, high: 11, low: 9, close: 10, volume: 1 },
+    { openTime: 2000, open: 10, high: 11, low: 9, close: 10, volume: 1 },
+    { openTime: 5000, open: 10, high: 11, low: 9, close: 10, volume: 1 }, // 3× 基准 = 周末
+  ])
+  assert.equal(q.timeGaps, 0)
+  assert.equal(q.healthy, true)
+})
+
+test('candlesCheck: 非有限值与空序列不健康', () => {
+  const bad = candlesCheck([
+    { openTime: 1000, open: 10, high: 11, low: 9, close: 10, volume: 1 },
+    { openTime: 2000, open: Number.NaN, high: 11, low: 9, close: 10, volume: 1 },
+  ])
+  assert.equal(bad.nonFinite, 1)
+  assert.equal(bad.healthy, false)
+  assert.equal(candlesCheck([]).healthy, false)
 })
 
 test('seriesQuality: 缺值 + z 异常 + 冻结检测', () => {

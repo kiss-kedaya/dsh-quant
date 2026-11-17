@@ -70,7 +70,8 @@ export function parseRepoStats(
     stars: num(repoJson.stargazers_count, 'stargazers_count'),
     forks: num(repoJson.forks_count, 'forks_count'),
     watchers: num(repoJson.subscribers_count, 'subscribers_count'),
-    openIssues: num(repoJson.open_issues_count, 'open_issues_count'),
+    // GitHub 的 open_issues_count 包含 PR；减掉已取到的 open PR 数才是纯 issue 数
+    openIssues: Math.max(0, num(repoJson.open_issues_count, 'open_issues_count') - pullsJson.length),
     openPullRequests: pullsJson.length,
     language: str(repoJson.language, 'language'),
     topics,

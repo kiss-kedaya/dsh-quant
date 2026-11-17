@@ -43,7 +43,7 @@ export interface ChartCandle {
 
 export type ChartData =
   | { kind: 'candles'; title: string; candles: ChartCandle[]; overlays: ChartSeries[]; markers: ChartMarker[] }
-  | { kind: 'series'; title: string; series: ChartSeries[] }
+  | { kind: 'series'; title: string; series: ChartSeries[]; markers?: ChartMarker[] }
   | { kind: 'annotations'; title: string; values: (number | null)[]; annotations: ChartAnnotation[] }
 
 /** K 线图 + 叠加线（均线/布林带等）+ 买卖点标记。 */
@@ -53,6 +53,16 @@ export function chartCandles(
   markers: readonly ChartMarker[] = [],
   title = 'candles',
 ): ChartData {
+  for (const o of overlays) {
+    if (o.values.length !== candles.length) {
+      throw new RangeError(`overlay "${o.name}" length ${o.values.length} != candles ${candles.length}`)
+    }
+  }
+  for (const m of markers) {
+    if (!Number.isInteger(m.index) || m.index < 0 || m.index >= candles.length) {
+      throw new RangeError(`marker index ${m.index} out of range [0, ${candles.length})`)
+    }
+  }
   return { kind: 'candles', title, candles: [...candles], overlays: [...overlays], markers: [...markers] }
 }
 
@@ -67,6 +77,11 @@ export function chartAnnotations(
   annotations: readonly ChartAnnotation[],
   title = 'annotations',
 ): ChartData {
+  for (const a of annotations) {
+    if (!Number.isInteger(a.index) || a.index < 0 || a.index >= values.length) {
+      throw new RangeError(`annotation index ${a.index} out of range [0, ${values.length})`)
+    }
+  }
   return { kind: 'annotations', title, values: [...values], annotations: [...annotations] }
 }
 
@@ -88,6 +103,7 @@ export function chartBacktest(
     kind: 'series',
     title,
     series: [{ name: 'equity', values: [...equityCurve] }],
+    markers,
   }
 }
 
