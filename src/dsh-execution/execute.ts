@@ -76,7 +76,10 @@ export function executeSimulate(
   const feeRate = options.feeRate ?? 0.001
   if (!Number.isFinite(feeRate) || feeRate < 0) throw new RangeError(`feeRate must be >= 0, got ${feeRate}`)
   const slippageBps = options.slippageBps ?? 0
-  if (!Number.isFinite(slippageBps) || slippageBps < 0) throw new RangeError(`slippageBps must be >= 0, got ${slippageBps}`)
+  if (!Number.isFinite(slippageBps) || slippageBps < 0 || slippageBps >= 10000) {
+    // 10000bps = 100%：卖价会变成 0 或负数，现金被倒扣
+    throw new RangeError(`slippageBps must be in [0, 10000), got ${slippageBps}`)
+  }
   const latencyBars = options.latencyBars ?? 0
   if (!Number.isInteger(latencyBars) || latencyBars < 0) throw new RangeError(`latencyBars must be an integer >= 0, got ${latencyBars}`)
   const slip = slippageBps / 10000

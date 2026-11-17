@@ -48,7 +48,9 @@ export function fundSimulate(
   const initialCapital = options.initialCapital ?? 100_000_000
   const managementFeeRate = options.managementFeeRate ?? 0.02
   const performanceFeeRate = options.performanceFeeRate ?? 0.2
-  if (initialCapital <= 0) throw new RangeError(`initialCapital must be > 0, got ${initialCapital}`)
+  if (!Number.isFinite(initialCapital) || initialCapital <= 0) {
+    throw new RangeError(`initialCapital must be a finite number > 0, got ${initialCapital}`)
+  }
   if (!Number.isFinite(managementFeeRate) || managementFeeRate < 0 || managementFeeRate >= 1) {
     throw new RangeError(`managementFeeRate must be in [0, 1), got ${managementFeeRate}`)
   }
@@ -57,6 +59,11 @@ export function fundSimulate(
   }
   const n = equityCurve.length
   if (n === 0) throw new RangeError('equityCurve must not be empty')
+  for (const v of equityCurve) {
+    if (!Number.isFinite(v) || v <= 0) {
+      throw new RangeError(`equityCurve values must be finite positive numbers, got ${v}`)
+    }
+  }
   const dailyMgmt = managementFeeRate / 365
   const navNet: number[] = new Array(n).fill(1)
   let hwm = 1 // 高水位（初始净值 1.00）

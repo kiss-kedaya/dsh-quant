@@ -1149,6 +1149,7 @@ export function apply(ctx: Context) {
           timeNotIncreasing: { type: 'integer' , required: true},
           timeGaps: { type: 'integer' , required: true},
           extremeMoves: { type: 'integer' , required: true},
+          nonFinite: { type: 'integer' , required: true},
           healthy: { type: 'boolean' , required: true},
         },
         additionalProperties: false,
@@ -1158,8 +1159,8 @@ export function apply(ctx: Context) {
         text: value.healthy
           ? `data quality: healthy (${value.count} candles)`
           : `data quality: ${value.count} candles, issues — high<low ${value.highBelowLow}, ` +
-            `nonPositive ${value.nonPositive}, time ${value.timeNotIncreasing}, gaps ${value.timeGaps}, ` +
-            `extremeMoves ${value.extremeMoves}`,
+            `nonPositive ${value.nonPositive}, nonFinite ${value.nonFinite}, time ${value.timeNotIncreasing}, ` +
+            `gaps ${value.timeGaps}, extremeMoves ${value.extremeMoves}`,
       }],
     },
     isConcurrencySafe: () => true,

@@ -42,13 +42,12 @@ export function rebalanceSchedule(
   const totalCosts: number[] = []
   // 每 1..maxFrequency 期再平衡一次，评估总代价
   for (let freq = 1; freq <= maxFrequency; freq++) {
-    // 每期偏差累积 ≈ drift × freq / 2（线性累积的平均偏离）
-    // 再平衡成本摊到每期 ≈ costPerRebalance / freq
-    const driftCost = (driftPerPeriod * freq) / 2 // 平均偏差（期）
+    // 两者都是"比例"量纲：平均偏离 = driftPerPeriod × freq / 2，成本摊薄 = costPerRebalance / freq
+    // 线性相加才能得到内部最优 freq* = sqrt(2·cost/drift)；
+    // 原先 driftCost²×100 与 cost 量纲不一致，drift>0 时最优频率永远退化成 1
+    const driftCost = (driftPerPeriod * freq) / 2
     const tradingCost = costPerRebalance / freq
-    // 偏差成本权重：把偏差（百分比）按 1:1 与交易成本（百分比）比较
-    // 偏差成本用平方放大（偏差的代价随偏离加速）
-    const totalCost = driftCost * driftCost * 100 + tradingCost
+    const totalCost = driftCost + tradingCost
     frequencies.push(freq)
     totalCosts.push(totalCost)
   }

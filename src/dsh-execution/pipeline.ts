@@ -87,7 +87,9 @@ export async function researchPipeline(
   const provider = options.provider ?? 'binance'
   let symbol = options.symbol ?? 'BTCUSDT'
   let candles: Candle[]
-  if (options.candles !== undefined && options.candles.length > 0) {
+  if (options.candles !== undefined) {
+    // 显式传空数组是参数错误，不能被当成"未提供"去联网
+    if (options.candles.length === 0) throw new RangeError('candles must not be empty when provided')
     candles = [...options.candles]
   } else {
     candles = await fetchWithFallback(symbol, interval, limit, signal, provider)
@@ -118,6 +120,9 @@ export async function researchPipeline(
   // 所以第 t 条同时放动量(t)与第 t 期收益 ret(t)，内部取 ret(t+1) 才是 1 期前瞻。
   // 不能在这里手工推 ret(t+1)——那会让 factorEvaluate 再滞后一次，变成 2 期前瞻。
   const factorWindow = options.factorWindow ?? 20
+  if (!Number.isInteger(factorWindow) || factorWindow < 5) {
+    throw new RangeError(`factorWindow must be an integer >= 5, got ${factorWindow}`)
+  }
   const f: number[] = []
   const r: number[] = []
   for (let t = 12; t < close.length; t++) {
@@ -151,9 +156,14 @@ export async function researchPipeline(
     factor: fe === null ? undefined : { ic: fe.ic, icir: fe.icir },
   })
 
-  const markers = bt.trades
-    .filter(t => t.exitIndex !== null)
-    .map(t => ({ index: t.entryIndex, kind: 'entry' as const }))
+  const markers: { index: number; kind: 'entry' | 'exit' | 'stop' | 'target' }[] = []
+  for (const t of bt.trades) {
+    markers.push({ index: t.entryIndex, kind: 'entry' })
+    if (t.exitIndex !== null) {
+      const kind = t.exitReason === 'stop_loss' ? 'stop' : t.exitReason === 'take_profit' ? 'target' : 'exit'
+      markers.push({ index: t.exitIndex, kind })
+    }
+  }
   const chartCandleData = chartCandles(
     candles.map(c => ({ openTime: c.openTime, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume })),
     [{ name: `SMA${slow}`, values: [...smaValues] }],
