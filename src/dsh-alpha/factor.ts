@@ -120,10 +120,11 @@ export function factorEvaluate(
   if (n < 2) throw new RangeError(`need at least 2 paired observations, got ${n}`)
   const ic = pearson(f, r)
   const rankIc = spearman(f, r)
-  // IC 衰减：horizon h 的配对 f[i] vs r[i+h]
+  // IC 衰减：horizon h 的配对 f[i] vs r[i+h-1]。r[i] 已是 forwardReturns[i+1]（lagPair 已滞后一期），
+  // 因此 h=1 必须对齐到 r[0]（即全样本 IC），不能再用 r.slice(h) 多滞后一期。
   const icDecay: number[] = []
   for (let h = 1; h <= decayHorizons; h++) {
-    icDecay.push(n - h >= 2 ? pearson(f.slice(0, n - h), r.slice(h)) : 0)
+    icDecay.push(n - h >= 2 ? pearson(f.slice(0, n - h), r.slice(h - 1)) : 0)
   }
   // 滚动 IC
   const icSeries: number[] = []

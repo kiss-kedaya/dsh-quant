@@ -147,19 +147,40 @@ test('fetchKlines: okx code 非 0 / data 非数组报错', async () => {
   }
 })
 
-test('fetchKlines: bybit 不支持的 interval 报错，limit 封顶 200', async () => {
+test('fetchKlines: bybit 不支持的 interval 报错，limit 封顶 1000', async () => {
   const m = mockFetch(() => json({ retCode: 0, result: { list: BYBIT_ROWS } }))
   try {
     await assert.rejects(
       fetchKlines('BTCUSDT', '3d', 1, signal(), 'bybit'),
       /bybit provider does not support interval 3d/,
     )
+    await assert.rejects(
+      fetchKlines('BTCUSDT', '8h', 1, signal(), 'bybit'),
+      /bybit provider does not support interval 8h/,
+    )
     // 不支持的 interval 在发起请求前即报错；成功调用是第 1 次 fetch
-    const candles = await fetchKlines('BTCUSDT', '1d', 999, signal(), 'bybit')
+    const candles = await fetchKlines('BTCUSDT', '1d', 5000, signal(), 'bybit')
     const url = new URL(m.calls[0]!.url)
     assert.equal(url.searchParams.get('interval'), 'D')
-    assert.equal(url.searchParams.get('limit'), '200')
+    assert.equal(url.searchParams.get('limit'), '1000')
     assert.equal(candles[0]!.openTime, 1786752000000)
+    // 小时周期映射：4h → 240
+    await fetchKlines('BTCUSDT', '4h', 10, signal(), 'bybit')
+    assert.equal(new URL(m.calls[1]!.url).searchParams.get('interval'), '240')
+  } finally { m.restore() }
+})
+
+test('fetchKlines: okx 小时周期映射大写 H，不支持的周期报错', async () => {
+  const m = mockFetch(() => json({ code: '0', data: OKX_ROWS }))
+  try {
+    await fetchKlines('BTCUSDT', '4h', 10, signal(), 'okx')
+    assert.equal(new URL(m.calls[0]!.url).searchParams.get('bar'), '4H')
+    await fetchKlines('BTCUSDT', '6h', 10, signal(), 'okx')
+    assert.equal(new URL(m.calls[1]!.url).searchParams.get('bar'), '6H')
+    await assert.rejects(
+      fetchKlines('BTCUSDT', '8h', 1, signal(), 'okx'),
+      /okx provider does not support interval 8h/,
+    )
   } finally { m.restore() }
 })
 

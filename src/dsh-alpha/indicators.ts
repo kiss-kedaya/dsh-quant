@@ -150,15 +150,16 @@ export function bollinger(
   const lower: (number | null)[] = new Array(n).fill(null)
   if (n < window) return { upper, middle, lower }
   for (let i = window - 1; i < n; i++) {
+    // 两遍法：先求均值再求偏差平方和。sumSq/n - mean² 在高价小波动序列上会灾难性抵消（std 归零）。
     let sum = 0
-    let sumSq = 0
-    for (let j = i - window + 1; j <= i; j++) {
-      sum += values[j]!
-      sumSq += values[j]! * values[j]!
-    }
+    for (let j = i - window + 1; j <= i; j++) sum += values[j]!
     const mean = sum / window
-    const variance = sumSq / window - mean * mean
-    const std = Math.sqrt(Math.max(variance, 0))
+    let sq = 0
+    for (let j = i - window + 1; j <= i; j++) {
+      const d = values[j]! - mean
+      sq += d * d
+    }
+    const std = Math.sqrt(sq / window)
     middle[i] = mean
     upper[i] = mean + multiplier * std
     lower[i] = mean - multiplier * std

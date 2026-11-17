@@ -1711,6 +1711,7 @@ export function apply(ctx: Context) {
       numTrials: { type: 'integer', description: 'Number of trials/parameter-combinations tried (default 1)' },
       skewness: { type: 'number', description: 'Return skewness (default 0)' },
       kurtosis: { type: 'number', description: 'Excess kurtosis (default 0)' },
+      periodsPerYear: { type: 'integer', description: 'Periods per year used to de-annualize observedSharpe (default 252)' },
     },
     output: {
       schema: {
@@ -1733,7 +1734,7 @@ export function apply(ctx: Context) {
     },
     isConcurrencySafe: () => true,
     async execute(args) {
-      return deflatedSharpe(args.observedSharpe, args.numPeriods, args.numTrials, args.skewness, args.kurtosis)
+      return deflatedSharpe(args.observedSharpe, args.numPeriods, args.numTrials, args.skewness, args.kurtosis, args.periodsPerYear)
     },
   }))
 

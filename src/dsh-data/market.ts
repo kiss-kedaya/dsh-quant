@@ -57,26 +57,36 @@ const YAHOO_RANGE: { max: number; range: string }[] = [
   { max: 1825, range: '5y' },
 ]
 
-/** Binance interval → OKX bar 映射（相同则省略）。 */
+/** Binance interval → OKX bar 映射（OKX 的小时周期用大写 H，未列出的周期明确不支持）。 */
 const OKX_INTERVAL: Record<string, string> = {
+  '1m': '1m', '3m': '3m', '5m': '5m', '15m': '15m', '30m': '30m',
+  '1h': '1H', '2h': '2H', '4h': '4H', '6h': '6H', '12h': '12H',
   '1d': '1D', '3d': '3D', '1w': '1W', '1M': '1M',
 }
-/** Binance interval → Bybit interval 映射。 */
+/** Binance interval → Bybit interval 映射（Bybit 枚举：1/3/5/15/30/60/120/240/360/720/D/W/M）。 */
 const BYBIT_INTERVAL: Record<string, string> = {
   '1m': '1', '3m': '3', '5m': '5', '15m': '15', '30m': '30',
-  '1h': '60', '2h': '120', '4h': '240', '6h': '360', '8h': '480', '12h': '720',
-  '1d': 'D', '3d': '', '1w': 'W', '1M': 'M',
+  '1h': '60', '2h': '120', '4h': '240', '6h': '360', '12h': '720',
+  '1d': 'D', '1w': 'W', '1M': 'M',
+}
+
+/**
+ * 解析数值字段：null/undefined/空白字符串视为缺失并抛错。
+ * 不能先 Number() 再判有限性——Number(null) 与 Number('') 都是 0，会给行情伪造价格。
+ */
+function numericField(v: unknown, label: string, field: string): number {
+  if (v === null || v === undefined) throw new Error(`${label}: ${field} is missing (${String(v)})`)
+  if (typeof v === 'string' && v.trim() === '') throw new Error(`${label}: ${field} is missing (empty string)`)
+  const n = Number(v)
+  if (!Number.isFinite(n)) throw new Error(`${label}: ${field} is not a finite number (${String(v)})`)
+  return n
 }
 
 /** 解析 Binance klines 响应行（纯函数）。非法行抛错。 */
 export function parseKlines(rows: readonly (readonly unknown[])[]): Candle[] {
   return rows.map((row, i) => {
     if (row.length < 6) throw new Error(`klines row ${i}: expected >= 6 fields, got ${row.length}`)
-    const num = (v: unknown, field: string): number => {
-      const n = Number(v)
-      if (!Number.isFinite(n)) throw new Error(`klines row ${i}: ${field} is not a finite number (${String(v)})`)
-      return n
-    }
+    const num = (v: unknown, field: string): number => numericField(v, `klines row ${i}`, field)
     return {
       openTime: num(row[0], 'openTime'),
       open: num(row[1], 'open'),
@@ -131,11 +141,7 @@ function okxInstId(symbol: string): string {
 export function parseOkxKlines(rows: readonly (readonly unknown[])[]): Candle[] {
   return rows.slice().reverse().map((row, i) => {
     if (row.length < 6) throw new Error(`okx row ${i}: expected >= 6 fields, got ${row.length}`)
-    const num = (v: unknown, field: string): number => {
-      const n = Number(v)
-      if (!Number.isFinite(n)) throw new Error(`okx row ${i}: ${field} is not a finite number (${String(v)})`)
-      return n
-    }
+    const num = (v: unknown, field: string): number => numericField(v, `okx row ${i}`, field)
     return {
       openTime: num(row[0], 'openTime'),
       open: num(row[1], 'open'),
@@ -151,11 +157,7 @@ export function parseOkxKlines(rows: readonly (readonly unknown[])[]): Candle[] 
 export function parseBybitKlines(rows: readonly (readonly unknown[])[]): Candle[] {
   return rows.slice().reverse().map((row, i) => {
     if (row.length < 6) throw new Error(`bybit row ${i}: expected >= 6 fields, got ${row.length}`)
-    const num = (v: unknown, field: string): number => {
-      const n = Number(v)
-      if (!Number.isFinite(n)) throw new Error(`bybit row ${i}: ${field} is not a finite number (${String(v)})`)
-      return n
-    }
+    const num = (v: unknown, field: string): number => numericField(v, `bybit row ${i}`, field)
     return {
       openTime: num(row[0], 'openTime'),
       open: num(row[1], 'open'),
@@ -173,7 +175,8 @@ async function fetchOkxKlines(
   limit: number,
   signal: AbortSignal,
 ): Promise<Candle[]> {
-  const bar = OKX_INTERVAL[interval] ?? interval
+  const bar = OKX_INTERVAL[interval]
+  if (bar === undefined) throw new Error(`okx provider does not support interval ${interval}`)
   const url = new URL(OKX_KLINE_URL)
   url.searchParams.set('instId', okxInstId(symbol))
   url.searchParams.set('bar', bar)
@@ -200,7 +203,7 @@ async function fetchBybitKlines(
   url.searchParams.set('category', 'spot')
   url.searchParams.set('symbol', symbol)
   url.searchParams.set('interval', bybitInterval)
-  url.searchParams.set('limit', String(Math.min(limit, 200)))
+  url.searchParams.set('limit', String(Math.min(limit, 1000)))
   const res = await safeFetch(url, signal, `${symbol} ${interval} bybit`)
   const json = (await res.json()) as { retCode?: number; result?: { list?: unknown } }
   if (json.retCode !== 0 || !Array.isArray(json.result?.list)) {
@@ -246,11 +249,7 @@ export function assertYahooSymbol(symbol: string): void {
 /** 解析新浪 K 线（对象行：day/open/high/low/close/volume，价格为字符串）。 */
 export function parseSinaKlines(rows: readonly Record<string, unknown>[]): Candle[] {
   return rows.map((row, i) => {
-    const num = (v: unknown, field: string): number => {
-      const n = Number(v)
-      if (!Number.isFinite(n)) throw new Error(`sina row ${i}: ${field} is not a finite number (${String(v)})`)
-      return n
-    }
+    const num = (v: unknown, field: string): number => numericField(v, `sina row ${i}`, field)
     const day = row.day === undefined ? undefined : String(row.day)
     if (day === undefined) throw new Error(`sina row ${i}: missing day field`)
     const iso = day.includes(' ') ? day.replace(' ', 'T') + '+08:00' : day + 'T00:00:00+08:00'
@@ -277,11 +276,7 @@ export function parseTencentKlines(symbol: string, json: { code?: number; data?:
   if (rows === undefined) throw new Error(`tencent fetch: no kline data for ${symbol}`)
   return rows.map((row, i) => {
     if (row.length < 6) throw new Error(`tencent row ${i}: expected >= 6 fields, got ${row.length}`)
-    const num = (v: unknown, field: string): number => {
-      const n = Number(v)
-      if (!Number.isFinite(n)) throw new Error(`tencent row ${i}: ${field} is not a finite number (${String(v)})`)
-      return n
-    }
+    const num = (v: unknown, field: string): number => numericField(v, `tencent row ${i}`, field)
     const day = String(row[0])
     const openTime = Date.parse(day + 'T00:00:00+08:00')
     if (!Number.isFinite(openTime)) throw new Error(`tencent row ${i}: unparsable date ${day}`)

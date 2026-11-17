@@ -86,6 +86,10 @@ export function executeSimulate(
   const fills: SimFill[] = []
   let unfilledCount = 0
 
+  // 1) 静态校验 + 按成交时间排序（同一根 bar 内保持提交顺序）。
+  //    不能先按提交顺序撮合、事后排序：那样 cashAfter/positionAfter 与时间序错位，
+  //    甚至会让 bar i 的卖单用上 bar j>i 才买入的持仓（未来函数）。
+  const candidates: { order: SimOrder; orderIndex: number; fillIndex: number }[] = []
   orders.forEach((order, orderIndex) => {
     if (!Number.isInteger(order.index) || order.index < 0 || order.index >= n - 1) {
       unfilledCount++
@@ -112,6 +116,12 @@ export function executeSimulate(
       unfilledCount++
       return
     }
+    candidates.push({ order, orderIndex, fillIndex })
+  })
+  candidates.sort((a, b) => (a.fillIndex - b.fillIndex) || (a.orderIndex - b.orderIndex))
+
+  // 2) 按时间序逐笔撮合，现金/持仓状态随成交推进
+  for (const { order, orderIndex, fillIndex } of candidates) {
     const base = close[fillIndex]!
     const fillPrice = order.side === 'buy' ? base * (1 + slip) : base * (1 - slip)
     const equity = cash + position * base
@@ -121,24 +131,31 @@ export function executeSimulate(
       quantity = order.quantity
     } else {
       const frac = order.valueFraction ?? 1
-      quantity = order.side === 'buy'
-        ? (equity * frac) / fillPrice
-        : position * frac
+      if (order.side === 'buy') {
+        // 按权益比例定量，但受现金（含手续费）约束缩量：
+        // 否则 valueFraction=1 的满仓单会因算不入手续费而永远 unfilled。
+        const byEquity = (equity * frac) / fillPrice
+        const byCash = cash / (fillPrice * (1 + feeRate))
+        quantity = Math.min(byEquity, byCash)
+      } else {
+        quantity = position * frac
+      }
     }
     if (order.side === 'sell') quantity = Math.min(quantity, position)
     if (quantity <= 0) {
       unfilledCount++
-      return
+      continue
     }
     const value = quantity * fillPrice
     const fee = value * feeRate
     const slippageCost = quantity * Math.abs(fillPrice - base)
     if (order.side === 'buy') {
-      if (value + fee > cash + 1e-12) {
+      const required = value + fee
+      if (required > cash + Math.max(1e-12, Math.abs(cash) * 1e-12)) {
         unfilledCount++
-        return
+        continue
       }
-      cash -= value + fee
+      cash -= required
       position += quantity
     } else {
       cash += value - fee
@@ -148,10 +165,9 @@ export function executeSimulate(
       orderIndex, side: order.side, fillIndex, fillPrice, quantity, value, fee,
       slippageCost, cashAfter: cash, positionAfter: position, equityAfter: cash + position * base,
     })
-  })
+  }
 
-  // 按成交顺序重放状态 → 每根 K 线的盯市权益
-  fills.sort((a, b) => a.fillIndex - b.fillIndex)
+  // 3) 按时间序重放状态 → 每根 K 线的盯市权益
   const equityCurve: number[] = new Array(n).fill(0)
   let c = initialCash
   let p = 0

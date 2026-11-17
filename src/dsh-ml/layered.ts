@@ -75,50 +75,45 @@ export function layeredBacktest(
   let lsHold = 1
 
   for (let start = 0; start < t; start += horizon) {
-    const end = Math.min(start + horizon, t)
     // 当期因子分层
     const f = factor[start]!
     const order = f.map((_, i) => i).sort((a, b) => f[a]! - f[b]!)
     const perLayer = Math.max(1, Math.floor(n / layers))
     const topIdx = order.slice(Math.max(0, n - perLayer))
     const bottomIdx = order.slice(0, perLayer)
-    // 持有期收益
-    let topRet = 0
-    let bottomRet = 0
-    for (let i = start + 1; i < end; i++) {
+    // 调仓成本（双边，每段一次）——先扣，再按持有期逐期推进净值
+    const turnoverFee = 2 * feeRate
+    topHold *= 1 - turnoverFee
+    bottomHold *= 1 - turnoverFee
+    lsHold *= 1 - turnoverFee
+    topEquity[start] = topHold
+    bottomEquity[start] = bottomHold
+    longShortEquity[start] = lsHold
+    // 持有 horizon 期：收益取 start+1 .. min(start+horizon, t-1)
+    const holdEnd = Math.min(start + horizon, t - 1)
+    for (let i = start + 1; i <= holdEnd; i++) {
       const r = returns[i]!
       const topAvg = topIdx.reduce((a, idx) => a + r[idx]!, 0) / topIdx.length
       const bottomAvg = bottomIdx.reduce((a, idx) => a + r[idx]!, 0) / bottomIdx.length
-      topRet += topAvg
-      bottomRet += bottomAvg
-    }
-    // 分层统计（第 start 期）
-    for (let l = 0; l < layers; l++) {
-      const from = l * perLayer
-      const to = Math.min(from + perLayer, n)
-      if (from >= to) continue
-      const avg = order.slice(from, to).reduce((a, idx) => a + returns[start]![idx]!, 0) / (to - from)
-      layerMeanReturnPct[l]! += avg * 100
-      layerCount[l]!++
-    }
-    // 调仓成本（双边）
-    const turnoverFee = 2 * feeRate
-    topHold *= (1 + topRet) * (1 - turnoverFee)
-    bottomHold *= (1 + bottomRet) * (1 - turnoverFee)
-    lsHold *= (1 + topRet - bottomRet) * (1 - turnoverFee)
-    rebalances++
-    // 填充持有期净值
-    for (let i = start; i < end; i++) {
+      topHold *= 1 + topAvg
+      bottomHold *= 1 + bottomAvg
+      lsHold *= 1 + topAvg - bottomAvg
       topEquity[i] = topHold
       bottomEquity[i] = bottomHold
       longShortEquity[i] = lsHold
     }
-  }
-  // 填充尾部
-  for (let i = t - 1; i >= 0; i--) {
-    if (topEquity[i] === 1 && i > 0) topEquity[i] = topEquity[i - 1]!
-    if (bottomEquity[i] === 1 && i > 0) bottomEquity[i] = bottomEquity[i - 1]!
-    if (longShortEquity[i] === 1 && i > 0) longShortEquity[i] = longShortEquity[i - 1]!
+    // 分层统计：因子[start] 对下一期（start+1）收益的区分度——不能用同期 returns[start]
+    if (start + 1 < t) {
+      for (let l = 0; l < layers; l++) {
+        const from = l * perLayer
+        const to = Math.min(from + perLayer, n)
+        if (from >= to) continue
+        const avg = order.slice(from, to).reduce((a, idx) => a + returns[start + 1]![idx]!, 0) / (to - from)
+        layerMeanReturnPct[l]! += avg * 100
+        layerCount[l]!++
+      }
+    }
+    rebalances++
   }
   for (let l = 0; l < layers; l++) {
     if (layerCount[l]! > 0) layerMeanReturnPct[l] = layerMeanReturnPct[l]! / layerCount[l]!
