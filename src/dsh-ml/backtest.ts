@@ -15,7 +15,7 @@ export interface BacktestTrade {
   exitIndex: number | null
   /** 出场价（null = 持仓到末尾未平仓） */
   exitPrice: number | null
-  /** 该笔收益（含手续费后的净收益率） */
+  /** 该笔收益（含手续费后的净收益率）：(1 - feeRate)^2 × (exitPrice / entryPrice) - 1；未平仓为 null */
   returnPct: number | null
   /** 出场原因：策略信号 / 止损 / 止盈 */
   exitReason?: 'signal' | 'stop_loss' | 'take_profit'
@@ -33,6 +33,19 @@ export interface BacktestOutput {
   fast: number
   slow: number
   feeRate: number
+}
+
+/**
+ * 平仓结算：入场时现金已扣买入费用，平仓时先实现价格盈亏、再扣卖出费用。
+ * 返回卖出后的现金（持仓已全部卖出）。
+ */
+function closePositionCash(cash: number, feeRate: number, entryPrice: number, exitPrice: number): number {
+  return cash * (1 - feeRate) * (exitPrice / entryPrice)
+}
+
+/** 完整一笔交易的净收益率（含双边手续费）：(1 - feeRate)^2 × (exitPrice / entryPrice) - 1。 */
+function netTradeReturnPct(feeRate: number, entryPrice: number, exitPrice: number): number {
+  return (1 - feeRate) * (1 - feeRate) * (exitPrice / entryPrice) - 1
 }
 
 /**
@@ -89,13 +102,13 @@ export function backtestMaCross(
     }
     if (pendingExit && holding) {
       const exitPrice = close[i]!
-      cash *= 1 - feeRate
+      cash = closePositionCash(cash, feeRate, entryPrice, exitPrice)
       trades.push({
         entryIndex: entryIndex!,
         entryPrice,
         exitIndex: i,
         exitPrice,
-        returnPct: exitPrice / entryPrice - 1,
+        returnPct: netTradeReturnPct(feeRate, entryPrice, exitPrice),
         exitReason: 'signal',
       })
       holding = false
@@ -105,13 +118,13 @@ export function backtestMaCross(
       const reason = stopTargetReason(close, i, entryPrice, stopLoss, takeProfit)
       if (reason !== undefined) {
         const exitPrice = close[i]!
-        cash *= 1 - feeRate
+        cash = closePositionCash(cash, feeRate, entryPrice, exitPrice)
         trades.push({
           entryIndex: entryIndex!,
           entryPrice,
           exitIndex: i,
           exitPrice,
-          returnPct: exitPrice / entryPrice - 1,
+          returnPct: netTradeReturnPct(feeRate, entryPrice, exitPrice),
           exitReason: reason,
         })
         holding = false
@@ -337,8 +350,8 @@ export function backtestBollingerBreakout(
     }
     if (pendingExit && holding) {
       const exitPrice = close[i]!
-      cash *= 1 - feeRate
-      trades.push({ entryIndex: entryIndex!, entryPrice, exitIndex: i, exitPrice, returnPct: exitPrice / entryPrice - 1, exitReason: 'signal' })
+      cash = closePositionCash(cash, feeRate, entryPrice, exitPrice)
+      trades.push({ entryIndex: entryIndex!, entryPrice, exitIndex: i, exitPrice, returnPct: netTradeReturnPct(feeRate, entryPrice, exitPrice), exitReason: 'signal' })
       holding = false
       entryIndex = null
     }
@@ -346,8 +359,8 @@ export function backtestBollingerBreakout(
       const reason = stopTargetReason(close, i, entryPrice, stopLoss, takeProfit)
       if (reason !== undefined) {
         const exitPrice = close[i]!
-        cash *= 1 - feeRate
-        trades.push({ entryIndex: entryIndex!, entryPrice, exitIndex: i, exitPrice, returnPct: exitPrice / entryPrice - 1, exitReason: reason })
+        cash = closePositionCash(cash, feeRate, entryPrice, exitPrice)
+        trades.push({ entryIndex: entryIndex!, entryPrice, exitIndex: i, exitPrice, returnPct: netTradeReturnPct(feeRate, entryPrice, exitPrice), exitReason: reason })
         holding = false
         entryIndex = null
       }
@@ -429,8 +442,8 @@ export function backtestRsiReversion(
     }
     if (pendingExit && holding) {
       const exitPrice = close[i]!
-      cash *= 1 - feeRate
-      trades.push({ entryIndex: entryIndex!, entryPrice, exitIndex: i, exitPrice, returnPct: exitPrice / entryPrice - 1, exitReason: 'signal' })
+      cash = closePositionCash(cash, feeRate, entryPrice, exitPrice)
+      trades.push({ entryIndex: entryIndex!, entryPrice, exitIndex: i, exitPrice, returnPct: netTradeReturnPct(feeRate, entryPrice, exitPrice), exitReason: 'signal' })
       holding = false
       entryIndex = null
     }
@@ -438,8 +451,8 @@ export function backtestRsiReversion(
       const reason = stopTargetReason(close, i, entryPrice, stopLoss, takeProfit)
       if (reason !== undefined) {
         const exitPrice = close[i]!
-        cash *= 1 - feeRate
-        trades.push({ entryIndex: entryIndex!, entryPrice, exitIndex: i, exitPrice, returnPct: exitPrice / entryPrice - 1, exitReason: reason })
+        cash = closePositionCash(cash, feeRate, entryPrice, exitPrice)
+        trades.push({ entryIndex: entryIndex!, entryPrice, exitIndex: i, exitPrice, returnPct: netTradeReturnPct(feeRate, entryPrice, exitPrice), exitReason: reason })
         holding = false
         entryIndex = null
       }

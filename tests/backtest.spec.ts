@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { backtestGrid, backtestMaCross } from '../src/dsh-ml/backtest.ts'
+import { backtestBollingerBreakout, backtestGrid, backtestMaCross, backtestRsiReversion } from '../src/dsh-ml/backtest.ts'
 
 test('backtest: V 形序列 — 一次买入持有到末尾（open trade）', () => {
   const close = [10, 9, 8, 7, 6, 5, 6, 7, 8, 9, 10, 11, 12]
@@ -32,11 +32,12 @@ test('backtest: V 形后回落 — 完整买卖周期 + 双边手续费', () => 
   assert.equal(t.entryIndex, 8)
   assert.equal(t.exitIndex, 13)
   assert.equal(t.exitPrice, 7)
-  assert.ok(Math.abs(t.returnPct! - (7 / 8 - 1)) < 1e-9)
-  // 空仓收尾：cash = (1-fee)^2 = 0.998001
+  // 净收益含双边手续费：0.999^2 × (7/8) - 1
+  assert.ok(Math.abs(t.returnPct! - (0.999 * 0.999 * (7 / 8) - 1)) < 1e-12)
+  // 空仓收尾：cash 已实现价格盈亏并扣双边手续费 = 0.999^2 × 7/8
   assert.equal(out.position[13], 0)
-  assert.ok(Math.abs(out.equityCurve[13]! - 0.998001) < 1e-9)
-  assert.ok(Math.abs(out.totalReturnPct - (0.998001 - 1) * 100) < 1e-6)
+  assert.ok(Math.abs(out.equityCurve[13]! - 0.999 * 0.999 * (7 / 8)) < 1e-12)
+  assert.ok(Math.abs(out.totalReturnPct - (0.999 * 0.999 * (7 / 8) - 1) * 100) < 1e-9)
 })
 
 test('backtest: 单调上升无交叉 → 无交易', () => {
@@ -108,4 +109,77 @@ test('backtestGrid: 前置条件', () => {
   assert.throws(() => backtestGrid([1, 2, 3], 2, 2, 3, 3, -1), /feeRate/)
   // 所有组合都非法（fast 范围全 >= slow 范围）→ 抛错
   assert.throws(() => backtestGrid([1, 2, 3, 4, 5], 5, 5, 1, 1, 0), /no valid/)
+})
+
+// ---- 平仓会计恒等式（Issue #166）：价格盈亏必须真正结算，双边费用分别扣除 ----
+
+test('backtest: 盈利完整买卖 — 平仓收益计入净值和含费净收益', () => {
+  // 买 i=5 @6；卖 i=10 @8（信号 i 确认、i+1 收盘成交）
+  const out = backtestMaCross([5, 4, 3, 4, 5, 6, 10, 10, 10, 9, 8, 7], 2, 3, 0.001)
+  assert.equal(out.trades.length, 1)
+  const t = out.trades[0]!
+  assert.equal(t.entryIndex, 5)
+  assert.equal(t.exitIndex, 10)
+  assert.equal(t.entryPrice, 6)
+  assert.equal(t.exitPrice, 8)
+  const expectedNav = 0.999 * 0.999 * (8 / 6)
+  assert.ok(Math.abs(out.equityCurve[10]! - expectedNav) < 1e-12)
+  assert.ok(Math.abs(out.equityCurve[11]! - expectedNav) < 1e-12) // 空仓后保持
+  assert.ok(Math.abs(t.returnPct! - (expectedNav - 1)) < 1e-12)
+  assert.ok(Math.abs(out.totalReturnPct - (expectedNav - 1) * 100) < 1e-9)
+})
+
+test('backtest: 零手续费时净值等于价格比', () => {
+  const out = backtestMaCross([5, 4, 3, 4, 5, 6, 10, 10, 10, 9, 8, 7], 2, 3, 0)
+  assert.ok(Math.abs(out.equityCurve[10]! - 8 / 6) < 1e-12)
+  assert.ok(Math.abs(out.trades[0]!.returnPct! - (8 / 6 - 1)) < 1e-12)
+})
+
+test('backtest: 止盈平仓也结算价格盈亏', () => {
+  const out = backtestMaCross([10, 10, 10, 10, 11, 12, 13, 14, 15, 16], 2, 3, 0.001, undefined, 0.10)
+  const t = out.trades[0]!
+  assert.equal(t.exitReason, 'take_profit')
+  assert.equal(t.entryPrice, 12)
+  assert.equal(t.exitPrice, 14)
+  const expectedNav = 0.999 * 0.999 * (14 / 12)
+  assert.ok(Math.abs(out.equityCurve[7]! - expectedNav) < 1e-12)
+  assert.ok(Math.abs(t.returnPct! - (expectedNav - 1)) < 1e-12)
+})
+
+test('backtest: 止损平仓也结算价格盈亏（布林带）', () => {
+  const out = backtestBollingerBreakout([100, 100, 100, 100, 130, 140, 100, 90, 80, 70, 60, 50], 3, 1, 0.001, 0.15)
+  const t = out.trades[0]!
+  assert.equal(t.exitReason, 'stop_loss')
+  assert.equal(t.entryPrice, 140)
+  assert.equal(t.exitPrice, 100)
+  const expectedNav = 0.999 * 0.999 * (100 / 140)
+  assert.ok(Math.abs(out.equityCurve[6]! - expectedNav) < 1e-12)
+  assert.ok(Math.abs(t.returnPct! - (expectedNav - 1)) < 1e-12)
+})
+
+test('backtest: RSI 平仓净收益', () => {
+  const out = backtestRsiReversion([100, 90, 80, 70, 60, 50, 60, 70, 80, 90, 100, 110, 120, 130, 120, 110, 100], 3, 30, 70, 0.001)
+  assert.equal(out.trades.length, 1)
+  const t = out.trades[0]!
+  assert.equal(t.entryPrice, 70)
+  assert.equal(t.exitPrice, 110)
+  const expectedNav = 0.999 * 0.999 * (110 / 70)
+  assert.ok(Math.abs(out.equityCurve.at(-1)! - expectedNav) < 1e-12)
+  assert.ok(Math.abs(t.returnPct! - (expectedNav - 1)) < 1e-12)
+})
+
+test('backtest: 多笔平仓后净值等于逐笔净收益复合（会计恒等式）', () => {
+  const close = Array.from({ length: 200 }, (_, i) => 100 + Math.sin(i / 7) * 10 + i * 0.1)
+  const feeRate = 0.001
+  const out = backtestMaCross(close, 5, 20, feeRate)
+  assert.ok(out.trades.length >= 2)
+  let nav = 1
+  for (const t of out.trades) {
+    if (t.exitPrice === null) {
+      nav *= close[close.length - 1]! / t.entryPrice
+      break
+    }
+    nav *= (1 - feeRate) * (1 - feeRate) * (t.exitPrice / t.entryPrice)
+  }
+  assert.ok(Math.abs(out.equityCurve.at(-1)! - nav) < 1e-12)
 })
