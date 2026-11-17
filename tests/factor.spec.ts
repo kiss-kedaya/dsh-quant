@@ -56,3 +56,9 @@ test('combineFactors: 单调因子合成保持单调', () => {
   const s = out.signal
   for (let i = 1; i < s.length; i++) assert.ok(s[i]! >= s[i - 1]!)
 })
+
+test('combineFactors: 并列值取平均秩', () => {
+  const out = combineFactors([[1, 2, 2, 3]])
+  // z 标准化 → 排序秩 [0, 1.5, 1.5, 3] / 3
+  assert.deepEqual(out.signal.map(v => +v.toFixed(6)), [0, 0.5, 0.5, 1])
+})
