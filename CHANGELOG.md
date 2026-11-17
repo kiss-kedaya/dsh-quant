@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Backtests now realize the proceeds of a closed trade: `backtestMaCross`,
+  `backtestBollingerBreakout` and `backtestRsiReversion` apply the exit/entry
+  price ratio before charging the sell fee, instead of only deducting fees, so
+  `equityCurve`, `totalReturnPct`, Sharpe and max drawdown reflect actual P&L
+  (#166). `BacktestTrade.returnPct` now matches its documented meaning — net
+  return after both fees, `(1 - feeRate)^2 × exitPrice / entryPrice - 1`.
+  Tests are updated with hand-computed accounting identities (winning, losing,
+  flat, stop-loss, take-profit, multi-trade compounding) and no longer pin the
+  old behaviour.
+
 ## [0.92.0] - 2026-11-11
 
 FICC community and resource-directory milestone; additive minor release, no
